@@ -53,6 +53,8 @@ func (r *MonitorRunner) Run(ctx context.Context) error {
 	// 系统指标：每 1 分钟一次
 	worker.StartSystemMetrics(ctx, 10*time.Second)
 
+	worker.StartPeerStatusMetrics(ctx, 15*time.Second)
+
 	// 3. 主线程 hold 住
 	fmt.Printf("Metrics Server 启动在 %s\n", server.Addr)
 	err := server.ListenAndServe()

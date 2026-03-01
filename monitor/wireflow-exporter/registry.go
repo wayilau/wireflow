@@ -34,7 +34,7 @@ var (
 	PeerStatus = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "wireflow_peer_status",
 		Help: "Peer connection status (1: connected, 0: disconnected)",
-	}, []string{"peer_id"})
+	}, []string{"peer_id", "endpoint", "alias"})
 
 	LastHandshakeTime = prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "wireflow_peer_last_handshake_seconds",

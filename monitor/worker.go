@@ -10,14 +10,16 @@ import (
 
 // MetricWorker 定义采集管理结构
 type MetricWorker struct {
-	stopChan     chan struct{}
-	cpuCollector collector.MetricCollector
+	stopChan            chan struct{}
+	cpuCollector        collector.MetricCollector
+	peerStatusCollector collector.MetricCollector
 }
 
 func NewMetricWorker() *MetricWorker {
 	return &MetricWorker{
-		stopChan:     make(chan struct{}),
-		cpuCollector: collector.NewCPUCollector(),
+		stopChan:            make(chan struct{}),
+		cpuCollector:        collector.NewCPUCollector(),
+		peerStatusCollector: collector.NewPeerStatusCollector(),
 	}
 }
 
@@ -76,6 +78,72 @@ func (mw *MetricWorker) StartSystemMetrics(ctx context.Context, interval time.Du
 						exporter.NodeCoreUsage.WithLabelValues(coreID).Set(val)
 					}
 				}
+			case <-mw.stopChan:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+func (mw *MetricWorker) StartPeerStatusMetrics(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	go func() {
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				// 1. 调用 Peer 状态采集器（注意这里要换成你对应的 Collector 实例）
+				metrics, err := mw.peerStatusCollector.Collect()
+				if err != nil {
+					// log.Printf("failed to collect peer status: %v", err)
+					continue
+				}
+
+				// 2. 核心操作：在写入这一批次数据前，先重置 Gauge，防止已下线的节点残留
+				exporter.PeerStatus.Reset()
+				// 如果你顺便采集了流量，也在这里重置对应的 Gauge/Counter
+				// exporter.PeerBytesTransmit.Reset()
+				// exporter.PeerBytesReceive.Reset()
+
+				// 3. 遍历并设置指标
+				for _, m := range metrics {
+					val, ok := m.Value().(float64)
+					if !ok {
+						continue
+					}
+
+					labels := m.Labels()
+
+					// 根据指标名称分发数据
+					switch m.Name() {
+					case "peer_status":
+						// 确保这里的 Label 顺序与你定义 PeerStatus 时一致
+						// 建议：peer_id, ip, alias
+						exporter.PeerStatus.WithLabelValues(
+							labels["peer_id"],
+							labels["ip"],
+							labels["alias"],
+						).Set(val)
+
+						//TODO should Add traffic datas
+						//case "peer_receive_bytes":
+						//	exporter.PeerBytesReceive.WithLabelValues(
+						//		labels["peer_id"],
+						//		labels["ip"],
+						//		labels["alias"],
+						//	).Set(val)
+						//
+						//case "peer_transmit_bytes":
+						//	exporter.PeerBytesTransmit.WithLabelValues(
+						//		labels["peer_id"],
+						//		labels["ip"],
+						//		labels["alias"],
+						//	).Set(val)
+					}
+				}
+
 			case <-mw.stopChan:
 				return
 			case <-ctx.Done():
