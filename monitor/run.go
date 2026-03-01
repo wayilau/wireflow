@@ -2,6 +2,7 @@ package monitor
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 	"wireflow/internal/infra"
@@ -22,14 +23,29 @@ func NewMonitorRunner(peers *infra.PeerManager) *MonitorRunner {
 	}
 }
 
-func (r *MonitorRunner) Run() {
+func (r *MonitorRunner) Run(ctx context.Context) error {
 	// 1. 初始化监控服务器 (暴露 /metrics)
-	http.Handle("/metrics", promhttp.Handler())
+	mux := http.NewServeMux()
+	mux.Handle("/metrics", promhttp.Handler())
+	server := &http.Server{
+		Addr:    ":9586",
+		Handler: mux,
+	}
 
 	// 2. 启动后台采集协程
 	worker := NewMetricWorker()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+
+	go func() {
+		<-ctx.Done()
+		fmt.Printf("Metrics shutting down")
+		// 给 Server 5 秒钟处理最后的请求
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			fmt.Printf("Metrics Server 关闭失败: %v\n", err)
+		}
+
+	}()
 
 	// 链路探测：每 15 秒一次
 	worker.StartLinkProbing(ctx, 15*time.Second)
@@ -38,12 +54,12 @@ func (r *MonitorRunner) Run() {
 	worker.StartSystemMetrics(ctx, 10*time.Second)
 
 	// 3. 主线程 hold 住
-	// 注意：ListenAndServe 是阻塞的，所以必须放在最后，或者另开协程
-	// 但通常推荐主线程守在 HTTP 服务上，方便接收系统信号
-	addr := ":9586"
-	println("Wireflow Web Server started on", addr)
-	if err := http.ListenAndServe(addr, nil); err != nil {
-		panic(err)
+	fmt.Printf("Metrics Server 启动在 %s\n", server.Addr)
+	err := server.ListenAndServe()
+	if err == http.ErrServerClosed {
+		// 这是正常关闭，不当作错误返回
+		return nil
 	}
+	return err
 
 }
