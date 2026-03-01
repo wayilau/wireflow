@@ -14,6 +14,9 @@ func main() {
 	defer stop()
 	peerManager := infra.NewPeerManager()
 	runner := monitor.NewMonitorRunner(peerManager)
-	runner.Run(ctx)
-	
+	err := runner.Run(ctx)
+	if err != nil {
+		panic(err)
+	}
+
 }

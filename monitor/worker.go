@@ -10,7 +10,6 @@ import (
 
 // MetricWorker 定义采集管理结构
 type MetricWorker struct {
-	interval     time.Duration
 	stopChan     chan struct{}
 	cpuCollector collector.MetricCollector
 }
